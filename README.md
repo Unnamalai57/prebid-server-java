@@ -47,4 +47,4 @@ For more information how to start the server follow [documentation](docs/run.md)
 
 - To verify everything is OK go to `http://localhost:8080/status` and check response status is `200 OK`.
 
-##### More detailed project documentation can be found [here](docs/TOC.md).
+#####Test More detailed project documentation can be found [here](docs/TOC.md).
