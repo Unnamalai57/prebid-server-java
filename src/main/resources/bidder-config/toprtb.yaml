@@ -1,0 +1,20 @@
+adapters:
+  toprtb:
+    enabled: true
+    endpoint: http://ssp.toprtb.com:8080/sspNew/rest/ReqAd/post
+    pbs-enforces-gdpr: false
+    deprecated-names:
+    aliases:
+    meta-info:
+      maintainer-email: karthikeyan.d@djaxtech.com
+      app-media-types:
+      site-media-types:
+        - banner
+      supported-vendors:
+      vendor-id: 123
+    usersync:
+      url: http://ssp.toprtb.com
+      redirect-url: /setuid?bidder=toprtb&gdpr=1&gdpr_consent=BONV8oqONXwgmADACHENAO7pqzAAppY&uid=
+      cookie-family-name: toprtb
+      type: redirect
+      support-cors: false
