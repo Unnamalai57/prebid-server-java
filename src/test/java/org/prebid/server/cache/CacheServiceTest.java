@@ -222,7 +222,8 @@ public class CacheServiceTest extends VertxTest {
         givenHttpClientReturnsResponse(200, null);
 
         cacheService = new CacheService(applicationSettings, mediaTypeCacheTtl, httpClient,
-                new URL("https://cache-service-host:8888/cache"), "https://cache-service-host:8080/cache?uuid=%PBS_CACHE_UUID%");
+                new URL("https://cache-service-host:8888/cache"),
+                "https://cache-service-host:8080/cache?uuid=%PBS_CACHE_UUID%");
 
         // when
         cacheService.cacheBids(singleBidList(), timeout);
@@ -270,7 +271,7 @@ public class CacheServiceTest extends VertxTest {
         final com.iab.openrtb.response.Bid bid2 = givenBidOpenrtb(builder -> builder.impid("impId1").nurl("adm2"));
         final Imp imp1 = givenImp(builder -> builder.id("impId1").video(Video.builder().build()));
         cacheService.cacheBidsOpenrtb(
-                asList(bid1, bid2), asList(imp1),
+                asList(bid1, bid2), singletonList(imp1),
                 CacheContext.of(true, null, true, null), null, timeout);
 
         // then
@@ -429,7 +430,7 @@ public class CacheServiceTest extends VertxTest {
         givenHttpClientReturnsResponse(200, null);
 
         given(applicationSettings.getAccountById(any(), any()))
-                .willReturn(Future.succeededFuture(Account.of(null, null, 10, null, null)));
+                .willReturn(Future.succeededFuture(Account.builder().bannerCacheTtl(10).build()));
 
         // when
         cacheService.cacheBidsOpenrtb(
@@ -469,7 +470,7 @@ public class CacheServiceTest extends VertxTest {
         // given
         cacheService = new CacheService(applicationSettings, CacheTtl.of(10, null), httpClient,
                 new URL("http://cache-service/cache"), "http://cache-service-host/cache?uuid=%PBS_CACHE_UUID%");
-        given(applicationSettings.getAccountById(anyString(),any()))
+        given(applicationSettings.getAccountById(anyString(), any()))
                 .willReturn(Future.failedFuture(new PreBidException("Not Found")));
 
         givenHttpClientReturnsResponse(200, null);

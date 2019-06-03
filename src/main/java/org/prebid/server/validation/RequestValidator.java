@@ -43,6 +43,7 @@ import org.prebid.server.proto.openrtb.ext.request.ExtDevice;
 import org.prebid.server.proto.openrtb.ext.request.ExtDeviceInt;
 import org.prebid.server.proto.openrtb.ext.request.ExtDevicePrebid;
 import org.prebid.server.proto.openrtb.ext.request.ExtGranularityRange;
+import org.prebid.server.proto.openrtb.ext.request.ExtMediaTypePriceGranularity;
 import org.prebid.server.proto.openrtb.ext.request.ExtPriceGranularity;
 import org.prebid.server.proto.openrtb.ext.request.ExtRegs;
 import org.prebid.server.proto.openrtb.ext.request.ExtRequestPrebid;
@@ -52,6 +53,7 @@ import org.prebid.server.proto.openrtb.ext.request.ExtUser;
 import org.prebid.server.proto.openrtb.ext.request.ExtUserDigiTrust;
 import org.prebid.server.proto.openrtb.ext.request.ExtUserPrebid;
 import org.prebid.server.proto.openrtb.ext.request.ExtUserTpId;
+import org.prebid.server.proto.openrtb.ext.response.BidType;
 import org.prebid.server.validation.model.ValidationResult;
 
 import java.io.IOException;
@@ -74,6 +76,7 @@ import java.util.stream.Stream;
 public class RequestValidator {
 
     private static final String PREBID_EXT = "prebid";
+    private static final String CONTEXT_EXT = "context";
     private static final Locale LOCALE = Locale.US;
 
     private final BidderCatalog bidderCatalog;
@@ -206,25 +209,63 @@ public class RequestValidator {
      * Validates {@link ExtRequestTargeting}.
      */
     private static void validateTargeting(ExtRequestTargeting extRequestTargeting) throws ValidationException {
-        final ExtPriceGranularity extPriceGranularity;
-        try {
-            extPriceGranularity = Json.mapper.treeToValue(extRequestTargeting.getPricegranularity(),
-                    ExtPriceGranularity.class);
-        } catch (JsonProcessingException e) {
-            throw new ValidationException("Error while parsing request.ext.prebid.targeting.pricegranularity");
-        }
-
-        final Integer precision = extPriceGranularity.getPrecision();
-        if (precision != null && precision < 0) {
-            throw new ValidationException("Price granularity error: precision must be non-negative");
-        }
-        validateGranularityRanges(extPriceGranularity.getRanges());
+        validateExtPriceGranularity(extRequestTargeting.getPricegranularity(), null);
+        validateMediaTypePriceGranularity(extRequestTargeting.getMediatypepricegranularity());
 
         final Boolean includeWinners = extRequestTargeting.getIncludewinners();
         final Boolean includeBidderKeys = extRequestTargeting.getIncludebidderkeys();
         if (Objects.equals(includeWinners, false) && Objects.equals(includeBidderKeys, false)) {
             throw new ValidationException("ext.prebid.targeting: At least one of includewinners or includebidderkeys"
                     + " must be enabled to enable targeting support");
+        }
+    }
+
+    /**
+     * Validates {@link ExtPriceGranularity}.
+     */
+    private static void validateExtPriceGranularity(JsonNode priceGranularity, BidType type)
+            throws ValidationException {
+        final ExtPriceGranularity extPriceGranularity;
+        try {
+            extPriceGranularity = Json.mapper.treeToValue(priceGranularity, ExtPriceGranularity.class);
+        } catch (JsonProcessingException e) {
+            throw new ValidationException(String.format("Error while parsing request.ext.prebid.targeting.%s",
+                    type == null ? "pricegranularity" : "mediatypepricegranularity." + type));
+        }
+
+        final Integer precision = extPriceGranularity.getPrecision();
+        if (precision != null && precision < 0) {
+            throw new ValidationException(String.format("%srice granularity error: precision must be non-negative",
+                    type == null ? "P" : StringUtils.capitalize(type.name()) + " p"));
+        }
+        validateGranularityRanges(extPriceGranularity.getRanges());
+    }
+
+    /**
+     * Validates {@link ExtMediaTypePriceGranularity} if it's present.
+     */
+    private static void validateMediaTypePriceGranularity(ExtMediaTypePriceGranularity mediaTypePriceGranularity)
+            throws ValidationException {
+        if (mediaTypePriceGranularity != null) {
+            final JsonNode banner = mediaTypePriceGranularity.getBanner();
+            final JsonNode video = mediaTypePriceGranularity.getVideo();
+            final JsonNode xNative = mediaTypePriceGranularity.getXNative();
+            final boolean isBannerNull = banner == null || banner.isNull();
+            final boolean isVideoNull = video == null || video.isNull();
+            final boolean isNativeNull = xNative == null || xNative.isNull();
+            if (isBannerNull && isVideoNull && isNativeNull) {
+                throw new ValidationException(
+                        "Media type price granularity error: must have at least one media type present");
+            }
+            if (!isBannerNull) {
+                validateExtPriceGranularity(banner, BidType.banner);
+            }
+            if (!isVideoNull) {
+                validateExtPriceGranularity(video, BidType.video);
+            }
+            if (!isNativeNull) {
+                validateExtPriceGranularity(xNative, BidType.xNative);
+            }
         }
     }
 
@@ -723,7 +764,6 @@ public class RequestValidator {
                 }
             }
         }
-
     }
 
     private static String toEncodedRequest(Request nativeRequest, List<Asset> updatedAssets) {
@@ -742,10 +782,9 @@ public class RequestValidator {
         final Iterator<Map.Entry<String, JsonNode>> bidderExtensions = ext.fields();
         while (bidderExtensions.hasNext()) {
             final Map.Entry<String, JsonNode> bidderExtension = bidderExtensions.next();
-            String bidderName = bidderExtension.getKey();
-            if (!PREBID_EXT.equals(bidderName)) {
-                bidderName = aliases.getOrDefault(bidderName, bidderName);
-                validateImpBidderExtName(impIndex, bidderExtension, bidderName);
+            final String bidder = bidderExtension.getKey();
+            if (!Objects.equals(bidder, PREBID_EXT) && !Objects.equals(bidder, CONTEXT_EXT)) {
+                validateImpBidderExtName(impIndex, bidderExtension, aliases.getOrDefault(bidder, bidder));
             }
         }
     }

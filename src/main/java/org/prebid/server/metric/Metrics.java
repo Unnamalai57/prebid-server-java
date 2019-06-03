@@ -179,6 +179,10 @@ public class Metrics extends UpdatableMetrics {
         cookieSync().forBidder(bidder).incCounter(MetricName.gen);
     }
 
+    public void updateCookieSyncMatchesMetric(String bidder) {
+        cookieSync().forBidder(bidder).incCounter(MetricName.matches);
+    }
+
     public void updateCookieSyncGdprPreventMetric(String bidder) {
         cookieSync().forBidder(bidder).incCounter(MetricName.gdpr_prevent);
     }
@@ -216,6 +220,22 @@ public class Metrics extends UpdatableMetrics {
             incCounter(MetricName.geolocation_circuitbreaker_opened);
         } else {
             incCounter(MetricName.geolocation_circuitbreaker_closed);
+        }
+    }
+
+    public void updateStoredRequestMetric(boolean found) {
+        if (found) {
+            incCounter(MetricName.stored_requests_found);
+        } else {
+            incCounter(MetricName.stored_requests_missing);
+        }
+    }
+
+    public void updateStoredImpsMetric(boolean found) {
+        if (found) {
+            incCounter(MetricName.stored_imps_found);
+        } else {
+            incCounter(MetricName.stored_imps_missing);
         }
     }
 }

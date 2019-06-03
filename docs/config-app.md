@@ -49,9 +49,6 @@ This parameter affects how many CPU cores will be utilized by the application. R
 ## Setuid
 - `setuid.default-timeout-ms` - default operation timeout for requests to `/setuid` endpoint.
 
-## Events
-- `events.accounts-enabled` - a list of accounts supporting event notifications.   
-
 ## Cookie Sync
 - `cookie-sync.default-timeout-ms` - default operation timeout for requests to `/cookie_sync` endpoint.
 
@@ -74,8 +71,9 @@ But feel free to add additional bidder's specific options.
 
 ## Currency Converter
 - `currency-converter.enabled` - if equals to `true` the currency conversion service will be enabled to fetch updated rates and convert bid currencies. Also enables `/currency-rates` endpoint on admin port.
-- `currency-converter.refresh-period-ms` - default refresh period for currency rates updates.
 - `currency-converter.url` - the url for Prebid.org’s currency file. [More details](http://prebid.org/dev-docs/modules/currency.html)
+- `currency-converter.default-timeout-ms` - default operation timeout for fetching currency rates.
+- `currency-converter.refresh-period-ms` - default refresh period for currency rates updates.
 
 ## Metrics
 - `metrics.metricType` - set the type of metric counter for [Dropwizard Metrics](http://metrics.dropwizard.io). Can be `flushingCounter` (default), `counter` or `meter`.
@@ -189,8 +187,12 @@ contain 'WHERE last_updated > ?' to fetch only the records that were updated sin
 - `recaptcha-secret` - Google Recaptcha secret string given to certain domain account.
 
 ## Server status
-- `status-response` - message returned by /status endpoint when server is ready to serve requests.
-If not defined in config, endpoint will respond with 'No Content' (204) status with empty body.
+- `status-response` - message returned by ApplicationChecker in /status endpoint when server is ready to serve requests.
+If not defined in config all other Health Checkers would be disabled and endpoint will respond with 'No Content' (204) status with empty body.
+
+## Health Check
+- `health-check.database.enabled` - if equals to `true` the database health check will be enabled to periodically check database status.
+- `health-check.database.refresh-period-ms` - the refresh period for database status updates.
 
 ## GDPR
 - `gdpr.eea-countries` - comma separated list of countries in European Economic Area (EEA).

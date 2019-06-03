@@ -497,6 +497,15 @@ public class MetricsTest {
     }
 
     @Test
+    public void updateCookieSyncMatchesMetricShouldIncrementMetric() {
+        // when
+        metrics.updateCookieSyncMatchesMetric(RUBICON);
+
+        // then
+        assertThat(metricRegistry.counter("cookie_sync.rubicon.matches").getCount()).isEqualTo(1);
+    }
+
+    @Test
     public void updateGdprMaskedMetricShouldIncrementMetric() {
         // when
         metrics.updateGdprMaskedMetric(RUBICON);
@@ -619,6 +628,42 @@ public class MetricsTest {
 
         // then
         assertThat(metricRegistry.counter("geolocation_circuitbreaker_closed").getCount()).isEqualTo(1);
+    }
+
+    @Test
+    public void shouldIncrementStoredRequestFoundMetric() {
+        // when
+        metrics.updateStoredRequestMetric(true);
+
+        // then
+        assertThat(metricRegistry.counter("stored_requests_found").getCount()).isEqualTo(1);
+    }
+
+    @Test
+    public void shouldIncrementStoredRequestMissingMetric() {
+        // when
+        metrics.updateStoredRequestMetric(false);
+
+        // then
+        assertThat(metricRegistry.counter("stored_requests_missing").getCount()).isEqualTo(1);
+    }
+
+    @Test
+    public void shouldIncrementStoredImpFoundMetric() {
+        // when
+        metrics.updateStoredImpsMetric(true);
+
+        // then
+        assertThat(metricRegistry.counter("stored_imps_found").getCount()).isEqualTo(1);
+    }
+
+    @Test
+    public void shouldIncrementStoredImpMissingMetric() {
+        // when
+        metrics.updateStoredImpsMetric(false);
+
+        // then
+        assertThat(metricRegistry.counter("stored_imps_missing").getCount()).isEqualTo(1);
     }
 
     private void verifyCreatesConfiguredCounterType(Consumer<Metrics> metricsConsumer) {

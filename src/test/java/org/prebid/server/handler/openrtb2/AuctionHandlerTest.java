@@ -25,6 +25,7 @@ import org.prebid.server.analytics.model.AuctionEvent;
 import org.prebid.server.analytics.model.HttpContext;
 import org.prebid.server.auction.AuctionRequestFactory;
 import org.prebid.server.auction.ExchangeService;
+import org.prebid.server.auction.TimeoutResolver;
 import org.prebid.server.cookie.UidsCookie;
 import org.prebid.server.cookie.UidsCookieService;
 import org.prebid.server.exception.InvalidRequestException;
@@ -36,6 +37,7 @@ import org.prebid.server.util.HttpUtil;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.function.Function;
 
 import static java.util.Collections.emptyList;
@@ -43,9 +45,11 @@ import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
 import static java.util.function.Function.identity;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -69,6 +73,8 @@ public class AuctionHandlerTest extends VertxTest {
     private Metrics metrics;
     @Mock
     private Clock clock;
+    @Mock
+    private TimeoutResolver timeoutResolver;
 
     private AuctionHandler auctionHandler;
 
@@ -83,6 +89,8 @@ public class AuctionHandlerTest extends VertxTest {
 
     @Before
     public void setUp() {
+        given(timeoutResolver.adjustTimeout(anyLong())).willReturn(2000L);
+
         given(routingContext.request()).willReturn(httpRequest);
         given(routingContext.response()).willReturn(httpResponse);
 
@@ -98,7 +106,7 @@ public class AuctionHandlerTest extends VertxTest {
         final TimeoutFactory timeoutFactory = new TimeoutFactory(clock);
 
         auctionHandler = new AuctionHandler(exchangeService, auctionRequestFactory, uidsCookieService,
-                analyticsReporter, metrics, clock, timeoutFactory);
+                analyticsReporter, metrics, clock, timeoutFactory, timeoutResolver);
     }
 
     @Test
@@ -165,10 +173,10 @@ public class AuctionHandlerTest extends VertxTest {
     }
 
     @Test
-    public void shouldUseTimeoutFromRequest() {
+    public void shouldUseTimeoutFromTimeoutResolver() {
         // given
         given(auctionRequestFactory.fromRequest(any()))
-                .willReturn(Future.succeededFuture(givenBidRequest(builder -> builder.tmax(1000L))));
+                .willReturn(Future.succeededFuture(givenBidRequest(identity())));
 
         given(exchangeService.holdAuction(any(), any(), any(), any(), any()))
                 .willReturn(Future.succeededFuture(BidResponse.builder().build()));
@@ -177,14 +185,14 @@ public class AuctionHandlerTest extends VertxTest {
         auctionHandler.handle(routingContext);
 
         // then
-        assertThat(captureTimeout().remaining()).isEqualTo(1000L);
+        assertThat(captureTimeout().remaining()).isEqualTo(2000L);
     }
 
     @Test
     public void shouldComputeTimeoutBasedOnRequestProcessingStartTime() {
         // given
         given(auctionRequestFactory.fromRequest(any()))
-                .willReturn(Future.succeededFuture(givenBidRequest(builder -> builder.tmax(1000L))));
+                .willReturn(Future.succeededFuture(givenBidRequest(identity())));
 
         given(exchangeService.holdAuction(any(), any(), any(), any(), any()))
                 .willReturn(Future.succeededFuture(BidResponse.builder().build()));
@@ -196,7 +204,7 @@ public class AuctionHandlerTest extends VertxTest {
         auctionHandler.handle(routingContext);
 
         // then
-        assertThat(captureTimeout().remaining()).isEqualTo(950L);
+        assertThat(captureTimeout().remaining()).isEqualTo(1950L);
     }
 
     @Test
@@ -470,6 +478,48 @@ public class AuctionHandlerTest extends VertxTest {
                 .status(200)
                 .errors(emptyList())
                 .build());
+    }
+
+    @Test
+    public void shouldTolerateDuplicateQueryParamNames() {
+        // given
+        final BidRequest bidRequest = givenBidRequest(identity());
+        given(auctionRequestFactory.fromRequest(any()))
+                .willReturn(Future.succeededFuture(bidRequest));
+
+        final MultiMap params = MultiMap.caseInsensitiveMultiMap();
+        params.add("param", "value1");
+        params.add("param", "value2");
+        given(httpRequest.params()).willReturn(params);
+
+        // when
+        auctionHandler.handle(routingContext);
+
+        // then
+        final AuctionEvent auctionEvent = captureAuctionEvent();
+        final Map<String, String> obtainedParams = auctionEvent.getHttpContext().getQueryParams();
+        assertThat(obtainedParams.entrySet()).containsOnly(entry("param", "value1"));
+    }
+
+    @Test
+    public void shouldTolerateDuplicateHeaderNames() {
+        // given
+        final BidRequest bidRequest = givenBidRequest(identity());
+        given(auctionRequestFactory.fromRequest(any()))
+                .willReturn(Future.succeededFuture(bidRequest));
+
+        final CaseInsensitiveHeaders headers = new CaseInsensitiveHeaders();
+        headers.add("header", "value1");
+        headers.add("header", "value2");
+        given(httpRequest.headers()).willReturn(headers);
+
+        // when
+        auctionHandler.handle(routingContext);
+
+        // then
+        final AuctionEvent auctionEvent = captureAuctionEvent();
+        final Map<String, String> obtainedHeaders = auctionEvent.getHttpContext().getHeaders();
+        assertThat(obtainedHeaders.entrySet()).containsOnly(entry("header", "value1"));
     }
 
     private Timeout captureTimeout() {

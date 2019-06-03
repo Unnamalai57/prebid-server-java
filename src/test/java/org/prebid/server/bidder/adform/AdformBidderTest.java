@@ -61,7 +61,7 @@ public class AdformBidderTest extends VertxTest {
                 .site(Site.builder().page("www.example.com").build())
                 .regs(Regs.of(null, mapper.valueToTree(ExtRegs.of(1))))
                 .user(User.builder().buyeruid("buyeruid").ext(mapper.valueToTree(ExtUser.of(
-                        null, "consent", ExtUserDigiTrust.of("id", 123, 1), null))).build())
+                        null, "consent", ExtUserDigiTrust.of("id", 123, 1), null, null))).build())
                 .device(Device.builder().ua("ua").ip("ip").ifa("ifaId").build())
                 .source(Source.builder().tid("tid").build())
                 .build();
@@ -86,7 +86,7 @@ public class AdformBidderTest extends VertxTest {
                         tuple(HttpUtil.ACCEPT_HEADER.toString(), HttpHeaderValues.APPLICATION_JSON.toString()),
                         tuple(HttpUtil.USER_AGENT_HEADER.toString(), "ua"),
                         tuple(HttpUtil.X_FORWARDED_FOR_HEADER.toString(), "ip"),
-                        tuple(HttpUtil.X_REQUEST_AGENT_HEADER.toString(), "PrebidAdapter 0.1.2"),
+                        tuple(HttpUtil.X_REQUEST_AGENT_HEADER.toString(), "PrebidAdapter 0.1.3"),
                         tuple(HttpUtil.REFERER_HEADER.toString(), "www.example.com"),
                         // Base64 encoded {"id":"id","version":1,"keyv":123,"privacy":{"optout":true}}
                         tuple(HttpUtil.COOKIE_HEADER.toString(),

@@ -206,9 +206,10 @@ public class CookieSyncHandler implements Handler<RoutingContext> {
                 .map(bidder -> bidderStatusFor(bidder, context, uidsCookie, biddersRejectedByGdpr, gdpr, gdprConsent))
                 .filter(Objects::nonNull) // skip bidder with live UID
                 .collect(Collectors.toList());
+        updateCookieSyncMatchMetrics(bidders, bidderStatuses);
 
         final List<BidderUsersyncStatus> updatedBidderStatuses;
-        if (limit != null && limit > 0 && limit < bidders.size()) {
+        if (limit != null && limit > 0 && limit < bidderStatuses.size()) {
             Collections.shuffle(bidderStatuses);
             updatedBidderStatuses = bidderStatuses.subList(0, limit);
         } else {
@@ -238,6 +239,13 @@ public class CookieSyncHandler implements Handler<RoutingContext> {
         }
     }
 
+    private void updateCookieSyncMatchMetrics(Collection<String> syncBidders,
+                                              Collection<BidderUsersyncStatus> requiredUsersyncs) {
+        syncBidders.stream()
+                .filter(bidder -> requiredUsersyncs.stream().noneMatch(usersync -> bidder.equals(usersync.getBidder())))
+                .forEach(metrics::updateCookieSyncMatchesMetric);
+    }
+
     /**
      * Creates {@link BidderUsersyncStatus} for given bidder.
      */
@@ -263,12 +271,12 @@ public class CookieSyncHandler implements Handler<RoutingContext> {
                     .build();
         } else {
             final Usersyncer usersyncer = bidderCatalog.usersyncerByName(bidderNameFor(bidder));
-            final UsersyncInfo updatedUsersyncInfo = updatedUsersyncInfo(context, gdpr, gdprConsent, usersyncer);
+            final UsersyncInfo hostBidderUsersyncInfo = hostBidderUsersyncInfo(context, gdpr, gdprConsent, usersyncer);
 
-            if (updatedUsersyncInfo != null || !uidsCookie.hasLiveUidFrom(usersyncer.getCookieFamilyName())) {
+            if (hostBidderUsersyncInfo != null || !uidsCookie.hasLiveUidFrom(usersyncer.getCookieFamilyName())) {
                 result = bidderStatusBuilder(bidder)
                         .noCookie(true)
-                        .usersync(ObjectUtils.defaultIfNull(updatedUsersyncInfo,
+                        .usersync(ObjectUtils.defaultIfNull(hostBidderUsersyncInfo,
                                 UsersyncInfo.from(usersyncer).withGdpr(gdpr, gdprConsent).assemble()))
                         .build();
             } else {
@@ -295,24 +303,26 @@ public class CookieSyncHandler implements Handler<RoutingContext> {
      * <p>
      * 3. Host-bidder uid value in uids cookie should not exist or be different from host-cookie uid value.
      */
-    private UsersyncInfo updatedUsersyncInfo(RoutingContext context, String gdpr, String gdprConsent,
-                                             Usersyncer usersyncer) {
+    private UsersyncInfo hostBidderUsersyncInfo(RoutingContext context, String gdpr, String gdprConsent,
+                                                Usersyncer usersyncer) {
         final String cookieFamilyName = usersyncer.getCookieFamilyName();
         if (Objects.equals(cookieFamilyName, uidsCookieService.getHostCookieFamily())) {
 
             final Map<String, String> cookies = HttpUtil.cookiesAsMap(context);
             final String hostCookieUid = uidsCookieService.parseHostCookie(cookies);
-            if (hostCookieUid != null) {
 
+            if (hostCookieUid != null) {
                 final Uids parsedUids = uidsCookieService.parseUids(cookies);
                 final Map<String, UidWithExpiry> uidsMap = parsedUids != null ? parsedUids.getUids() : null;
                 final UidWithExpiry uidWithExpiry = uidsMap != null ? uidsMap.get(cookieFamilyName) : null;
                 final String uid = uidWithExpiry != null ? uidWithExpiry.getUid() : null;
 
                 if (!Objects.equals(hostCookieUid, uid)) {
-                    final String url = String.format("%s/setuid?bidder=%s&gdpr=%s&gdpr_consent=%s&uid=%s",
-                            externalUrl, cookieFamilyName, gdpr, gdprConsent, hostCookieUid);
-                    return UsersyncInfo.from(usersyncer).withUrl(url).assemble();
+                    final String url = String.format("%s/setuid?bidder=%s&gdpr={{gdpr}}&gdpr_consent={{gdpr_consent}}"
+                            + "&uid=%s", externalUrl, cookieFamilyName, HttpUtil.encodeUrl(hostCookieUid));
+                    return UsersyncInfo.from(usersyncer).withUrl(url)
+                            .withGdpr(gdpr, gdprConsent)
+                            .assemble();
                 }
             }
         }

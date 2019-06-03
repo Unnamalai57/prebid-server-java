@@ -5,6 +5,7 @@ import de.malkusch.whoisServerList.publicSuffixList.PublicSuffixListFactory;
 import io.vertx.core.Vertx;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.http.HttpClientOptions;
+import io.vertx.ext.jdbc.JDBCClient;
 import org.prebid.server.auction.AmpRequestFactory;
 import org.prebid.server.auction.AmpResponsePostProcessor;
 import org.prebid.server.auction.AuctionRequestFactory;
@@ -14,6 +15,7 @@ import org.prebid.server.auction.ImplicitParametersExtractor;
 import org.prebid.server.auction.InterstitialProcessor;
 import org.prebid.server.auction.PreBidRequestContextFactory;
 import org.prebid.server.auction.StoredRequestProcessor;
+import org.prebid.server.auction.TimeoutResolver;
 import org.prebid.server.bidder.BidderCatalog;
 import org.prebid.server.bidder.BidderDeps;
 import org.prebid.server.bidder.HttpAdapterConnector;
@@ -29,6 +31,9 @@ import org.prebid.server.gdpr.vendorlist.VendorListService;
 import org.prebid.server.geolocation.CircuitBreakerSecuredGeoLocationService;
 import org.prebid.server.geolocation.GeoLocationService;
 import org.prebid.server.geolocation.MaxMindGeoLocationService;
+import org.prebid.server.health.ApplicationChecker;
+import org.prebid.server.health.DatabaseHealthChecker;
+import org.prebid.server.health.HealthChecker;
 import org.prebid.server.metric.Metrics;
 import org.prebid.server.optout.GoogleRecaptchaVerifier;
 import org.prebid.server.settings.ApplicationSettings;
@@ -40,6 +45,7 @@ import org.prebid.server.vertx.http.CircuitBreakerSecuredHttpClient;
 import org.prebid.server.vertx.http.HttpClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -81,24 +87,47 @@ public class ServiceConfiguration {
     }
 
     @Bean
-    PreBidRequestContextFactory preBidRequestContextFactory(
+    TimeoutResolver timeoutResolver(
             @Value("${default-timeout-ms}") long defaultTimeout,
             @Value("${max-timeout-ms}") long maxTimeout,
-            @Value("${timeout-adjustment-ms}") long timeoutAdjustment,
+            @Value("${timeout-adjustment-ms}") long timeoutAdjustment) {
+
+        return new TimeoutResolver(defaultTimeout, maxTimeout, timeoutAdjustment);
+    }
+
+    @Bean
+    TimeoutResolver auctionTimeoutResolver(
+            @Value("${auction.default-timeout-ms}") long defaultTimeout,
+            @Value("${auction.max-timeout-ms}") long maxTimeout,
+            @Value("${auction.timeout-adjustment-ms}") long timeoutAdjustment) {
+
+        return new TimeoutResolver(defaultTimeout, maxTimeout, timeoutAdjustment);
+    }
+
+    @Bean
+    TimeoutResolver ampTimeoutResolver(
+            @Value("${amp.default-timeout-ms}") long defaultTimeout,
+            @Value("${amp.max-timeout-ms}") long maxTimeout,
+            @Value("${amp.timeout-adjustment-ms}") long timeoutAdjustment) {
+
+        return new TimeoutResolver(defaultTimeout, maxTimeout, timeoutAdjustment);
+    }
+
+    @Bean
+    PreBidRequestContextFactory preBidRequestContextFactory(
+            TimeoutResolver timeoutResolver,
             ImplicitParametersExtractor implicitParametersExtractor,
             ApplicationSettings applicationSettings,
             UidsCookieService uidsCookieService,
             TimeoutFactory timeoutFactory) {
 
-        return new PreBidRequestContextFactory(defaultTimeout, maxTimeout, timeoutAdjustment,
-                implicitParametersExtractor, applicationSettings, uidsCookieService, timeoutFactory);
+        return new PreBidRequestContextFactory(timeoutResolver, implicitParametersExtractor, applicationSettings,
+                uidsCookieService, timeoutFactory);
     }
 
     @Bean
     AuctionRequestFactory auctionRequestFactory(
-            @Value("${auction.default-timeout-ms}") long defaultTimeout,
-            @Value("${auction.max-timeout-ms}") long maxTimeout,
-            @Value("${auction.timeout-adjustment-ms}") long timeoutAdjustment,
+            TimeoutResolver auctionTimeoutResolver,
             @Value("${auction.max-request-size}") @Min(0) int maxRequestSize,
             @Value("${auction.ad-server-currency:#{null}}") String adServerCurrency,
             StoredRequestProcessor storedRequestProcessor,
@@ -107,21 +136,18 @@ public class ServiceConfiguration {
             BidderCatalog bidderCatalog,
             RequestValidator requestValidator) {
 
-        return new AuctionRequestFactory(defaultTimeout, maxTimeout, timeoutAdjustment, maxRequestSize,
-                adServerCurrency, storedRequestProcessor, implicitParametersExtractor, uidsCookieService, bidderCatalog,
-                requestValidator, new InterstitialProcessor());
+        return new AuctionRequestFactory(auctionTimeoutResolver, maxRequestSize, adServerCurrency,
+                storedRequestProcessor, implicitParametersExtractor, uidsCookieService, bidderCatalog, requestValidator,
+                new InterstitialProcessor());
     }
 
     @Bean
     AmpRequestFactory ampRequestFactory(
-            @Value("${amp.default-timeout-ms}") long defaultTimeout,
-            @Value("${amp.max-timeout-ms}") long maxTimeout,
-            @Value("${amp.timeout-adjustment-ms}") long timeoutAdjustment,
+            TimeoutResolver ampTimeoutResolver,
             StoredRequestProcessor storedRequestProcessor,
             AuctionRequestFactory auctionRequestFactory) {
 
-        return new AmpRequestFactory(defaultTimeout, maxTimeout, timeoutAdjustment, storedRequestProcessor,
-                auctionRequestFactory);
+        return new AmpRequestFactory(ampTimeoutResolver, storedRequestProcessor, auctionRequestFactory);
     }
 
     @Bean
@@ -244,13 +270,14 @@ public class ServiceConfiguration {
 
     @Bean
     GdprService gdprService(
+            ApplicationSettings applicationSettings,
             @Autowired(required = false) GeoLocationService geoLocationService,
             VendorListService vendorListService,
             @Value("${gdpr.eea-countries}") String eeaCountriesAsString,
             @Value("${gdpr.default-value}") String defaultValue) {
 
         final List<String> eeaCountries = Arrays.asList(eeaCountriesAsString.trim().split(","));
-        return new GdprService(geoLocationService, vendorListService, eeaCountries, defaultValue);
+        return new GdprService(applicationSettings, geoLocationService, vendorListService, eeaCountries, defaultValue);
     }
 
     @Bean
@@ -292,9 +319,10 @@ public class ServiceConfiguration {
     StoredRequestProcessor storedRequestProcessor(
             @Value("${auction.stored-requests-timeout-ms}") long defaultTimeoutMs,
             ApplicationSettings applicationSettings,
+            Metrics metrics,
             TimeoutFactory timeoutFactory) {
 
-        return new StoredRequestProcessor(applicationSettings, timeoutFactory, defaultTimeoutMs);
+        return new StoredRequestProcessor(applicationSettings, metrics, timeoutFactory, defaultTimeoutMs);
     }
 
     @Bean
@@ -354,11 +382,33 @@ public class ServiceConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "currency-converter", name = "enabled", havingValue = "true")
     CurrencyConversionService currencyConversionService(
-            @Value("${currency-converter.refresh-period-ms}") long refreshPeriod,
             @Value("${currency-converter.url}") String currencyServerUrl,
+            @Value("${currency-converter.default-timeout-ms}") long defaultTimeout,
+            @Value("${currency-converter.refresh-period-ms}") long refreshPeriod,
             Vertx vertx,
             HttpClient httpClient) {
 
-        return new CurrencyConversionService(currencyServerUrl, refreshPeriod, vertx, httpClient);
+        return new CurrencyConversionService(currencyServerUrl, defaultTimeout, refreshPeriod, vertx, httpClient);
+    }
+
+    @Configuration
+    @ConditionalOnProperty("status-response")
+    @ConditionalOnExpression("'${status-response}' != ''")
+    static class HealthCheckerConfiguration {
+
+        @Bean
+        @ConditionalOnProperty(prefix = "health-check.database", name = "enabled", havingValue = "true")
+        HealthChecker databaseChecker(
+                Vertx vertx,
+                JDBCClient jdbcClient,
+                @Value("${health-check.database.refresh-period-ms}") long refreshPeriod) {
+
+            return new DatabaseHealthChecker(vertx, jdbcClient, refreshPeriod);
+        }
+
+        @Bean
+        HealthChecker applicationChecker(@Value("${status-response}") String statusResponse) {
+            return new ApplicationChecker(statusResponse);
+        }
     }
 }

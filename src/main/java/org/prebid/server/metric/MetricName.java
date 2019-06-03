@@ -54,8 +54,15 @@ public enum MetricName {
     bad_requests,
     sets,
     gen,
+    matches,
     gdpr_prevent,
-    gdpr_masked;
+    gdpr_masked,
+
+    // stored data
+    stored_requests_found,
+    stored_requests_missing,
+    stored_imps_found,
+    stored_imps_missing;
 
     private final String name;
 
