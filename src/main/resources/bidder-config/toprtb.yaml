@@ -1,7 +1,7 @@
 adapters:
   toprtb:
     enabled: true
-    endpoint: http://ssp.toprtb.com:8080/sspNew/rest/ReqAd/post
+    endpoint: https://ssp.toprtb.com/sspNew/rest/ReqAd/post
     pbs-enforces-gdpr: false
     deprecated-names:
     aliases:
@@ -13,7 +13,7 @@ adapters:
       supported-vendors:
       vendor-id: 123
     usersync:
-      url: http://ssp.toprtb.com
+      url: https://ssp.toprtb.com
       redirect-url: /setuid?bidder=toprtb&gdpr=1&gdpr_consent=BONV8oqONXwgmADACHENAO7pqzAAppY&uid=
       cookie-family-name: toprtb
       type: redirect
